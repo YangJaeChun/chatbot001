@@ -1,74 +1,69 @@
 import streamlit as st
 from openai import OpenAI
-import pandas as pd
 
+# Show title and description
 st.title("💬 중소기업 지원사업 추천 서비스")
-st.write("지역과 업종을 알려주시면 맞춤 지원사업을 추천해 드려요! 예: '부산 제조업 지원사업 알려줘'")
+st.write(
+    "지역과 업종을 알려주시면 맞춤형 중소기업 지원사업을 추천해 드립니다! "
+    "예: '서울 IT 지원사업 알려줘'. "
+    "이 앱을 사용하려면 OpenAI API 키가 필요합니다. [여기](https://platform.openai.com/account/api-keys)에서 발급받으세요."
+)
 
-# 더미 데이터 (실제로는 CSV나 DB로 대체)
-support_programs = pd.DataFrame({
-    "name": ["스마트서비스 지원", "창업지원 프로그램"],
-    "region": ["부산", "서울"],
-    "industry": ["제조업", "IT"],
-    "amount": ["6천만 원", "5천만 원"],
-    "deadline": ["2025-05-15", "2025-06-01"]
-})
-
+# API 키 입력
 openai_api_key = st.text_input("OpenAI API Key", type="password")
 if not openai_api_key:
-    st.error("유효한 OpenAI API 키를 입력해 주세요.", icon="🚨")
+    st.info("계속하려면 OpenAI API 키를 입력해 주세요.", icon="🗝️")
 else:
-    client = OpenAI(api_key=openai_api_key)
-    
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+    try:
+        # OpenAI 클라이언트 생성
+        client = OpenAI(api_key=openai_api_key)
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        # 세션 상태에 메시지 저장소 초기화
+        if "messages" not in st.session_state:
+            st.session_state.messages = [
+                {"role": "system", "content": "당신은 중소기업 지원사업 추천 전문가입니다. 사용자가 지역과 업종을 물으면 적절한 지원사업을 추천하고, 구체적이지 않은 질문에는 질문을 명확히 하도록 유도하세요."}
+            ]
 
-    def extract_keywords(prompt):
-        keywords = {"region": None, "industry": None}
-        if "부산" in prompt:
-            keywords["region"] = "부산"
-        if "서울" in prompt:
-            keywords["region"] = "서울"
-        if "제조업" in prompt:
-            keywords["industry"] = "제조업"
-        if "IT" in prompt:
-            keywords["industry"] = "IT"
-        return keywords
+        # 기존 대화 메시지 출력
+        for message in st.session_state.messages:
+            if message["role"] != "system":  # 시스템 메시지는 화면에 표시하지 않음
+                with st.chat_message(message["role"]):
+                    st.markdown(message["content"])
 
-    def recommend_programs(keywords):
-        filtered = support_programs
-        if keywords["region"]:
-            filtered = filtered[filtered["region"] == keywords["region"]]
-        if keywords["industry"]:
-            filtered = filtered[filtered["industry"] == keywords["industry"]]
-        return filtered
+        # 사용자 입력 받기
+        if prompt := st.chat_input("어떤 지원사업을 찾으세요? (예: '부산 제조업 지원사업')"):
+            # 사용자 메시지 저장 및 출력
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
 
-    if prompt := st.chat_input("어떤 지원사업을 찾으세요?"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+            try:
+                # OpenAI API 호출
+                stream = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": m["role"], "content": m["content"]}
+                        for m in st.session_state.messages
+                    ],
+                    stream=True,
+                )
 
-        keywords = extract_keywords(prompt)
-        recommendations = recommend_programs(keywords)
+                # 스트리밍 응답을 문자열로 누적
+                response_content = ""
+                with st.chat_message("assistant"):
+                    for chunk in stream:
+                        if chunk.choices[0].delta.content is not None:
+                            response_content += chunk.choices[0].delta.content
+                            st.write(response_content)  # 실시간 업데이트
+                
+                # 완성된 응답을 세션 상태에 저장
+                st.session_state.messages.append({"role": "assistant", "content": response_content})
 
-        if not recommendations.empty:
-            rec_text = recommendations.to_string(index=False)
-            gpt_prompt = f"사용자가 '{prompt}'라고 물었어요. 다음 지원사업을 자연스럽게 설명해 주세요:\n{rec_text}"
-            stream = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "system", "content": gpt_prompt}],
-                stream=True,
-            )
-            with st.chat_message("assistant"):
-                response = st.write_stream(stream)
-            st.session_state.messages.append({"role": "assistant", "content": response})
-            st.table(recommendations[["name", "amount", "deadline"]])
-        else:
-            response = "아직 적합한 지원사업을 찾지 못했어요. 질문을 조금 더 구체적으로 해 주시면 더 잘 도와드릴게요!"
-            with st.chat_message("assistant"):
-                st.markdown(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            except Exception as e:
+                error_msg = "응답을 생성하는 중 오류가 발생했어요. API 키를 확인하거나 잠시 후 다시 시도해 주세요."
+                with st.chat_message("assistant"):
+                    st.error(error_msg, icon="⚠️")
+                st.session_state.messages.append({"role": "assistant", "content": error_msg})
+
+    except Exception as e:
+        st.error(f"OpenAI 클라이언트를 초기화할 수 없습니다. API 키가 올바른지 확인해 주세요. 오류: {str(e)}", icon="🚨")
