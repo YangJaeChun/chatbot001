@@ -3,7 +3,7 @@ from openai import OpenAI
 import pandas as pd
 
 # 페이지 설정
-st.title("💬 경기기업비서 - 중소기업 지원사업 추천")
+st.title("💬 경기도 중소기업 지원사업 추천 서비스")
 st.write(
     "경기도 중소기업을 위한 맞춤형 지원사업을 찾아드립니다! 예: '수원 IT 지원사업 알려줘' "
     "OpenAI API 키가 필요합니다. [여기](https://platform.openai.com/account/api-keys)에서 발급받으세요."
