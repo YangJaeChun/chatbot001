@@ -48,13 +48,14 @@ else:
                     stream=True,
                 )
 
-                # 스트리밍 응답을 문자열로 누적
+                # 스트리밍 응답을 플레이스홀더로 관리
                 response_content = ""
                 with st.chat_message("assistant"):
+                    placeholder = st.empty()  # 플레이스홀더 생성
                     for chunk in stream:
                         if chunk.choices[0].delta.content is not None:
                             response_content += chunk.choices[0].delta.content
-                            st.write(response_content)  # 실시간 업데이트
+                            placeholder.markdown(response_content)  # 같은 위치에서 업데이트
                 
                 # 완성된 응답을 세션 상태에 저장
                 st.session_state.messages.append({"role": "assistant", "content": response_content})
